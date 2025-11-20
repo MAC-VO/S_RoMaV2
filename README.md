@@ -22,7 +22,7 @@
     <a href="https://scholar.google.com/citations?user=lkWfR08AAAAJ">Michael Felsberg</a>
   </p>
   <h2 align="center"><p>
-    <a href="TBD" align="center">Paper</a> | 
+    <a href="https://arxiv.org/abs/2511.15706" align="center">Paper</a> | 
     <a href="TBD" align="center">Project Page</a>
   </p></h2>
   <div align="center"></div>
@@ -134,7 +134,7 @@ If you find our models useful, please consider citing our paper!
 @article{edstedt2025romav2,
   title={{RoMa v2: Harder Better Faster Denser Feature Matching}},
   author={Johan Edstedt, David Nordström, Yushan Zhang, Georg Bökman, Jonathan Astermark, Viktor Larsson, Anders Heyden, Fredrik Kahl, Mårten Wadenbäck, Michael Felsberg},
-  journal={In submission.},
+  journal={arXiv preprint arXiv:2511.15706},
   year={2025}
 }
 ```

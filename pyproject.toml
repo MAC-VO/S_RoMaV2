@@ -23,7 +23,7 @@ build-backend = "uv_build"
 
 [project.optional-dependencies]
 fused-local-corr = [
-    "fused-local-corr>=0.2.4 ; sys_platform == 'linux'",
+    "fused-local-corr ; sys_platform == 'linux'",
 ]
 eval = [
     "kornia>=0.8.2",

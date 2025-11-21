@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 try:
     import local_corr
-except:
+except ImportError:
     local_corr = None
 
 

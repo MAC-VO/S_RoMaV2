@@ -68,10 +68,6 @@ or
 uv sync
 ```
 
-NOTE: torch version is currently pinned to `2.8.0` for reproducibility towards our internal code.
-I'll likely soften this requirement very soon, as soon as I've tested other versions.
-Remind me if I haven't
-
 ## Benchmarks
 If you do not already have MegaDepth and ScanNet, you can the following to download them:
 ```bash

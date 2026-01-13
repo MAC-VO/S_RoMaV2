@@ -7,7 +7,7 @@ import numpy as np
 import cv2
 from PIL import Image
 from tqdm import tqdm
-from romav2.geometry import pose_auc
+from ..geometry import pose_auc
 import matplotlib.pyplot as plt
 
 OFFSET = 0.5

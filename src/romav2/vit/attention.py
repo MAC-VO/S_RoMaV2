@@ -10,7 +10,7 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-from romav2.vit.utils import cat_keep_shapes, uncat_with_shapes
+from .utils import cat_keep_shapes, uncat_with_shapes
 
 
 # RoPE-related functions:

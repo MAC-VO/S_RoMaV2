@@ -11,7 +11,7 @@
 from typing import List, Tuple, Union
 
 import torch
-from romav2.device import device
+from .device import device
 import torch.nn as nn
 
 

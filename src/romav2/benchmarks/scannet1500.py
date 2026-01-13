@@ -1,7 +1,7 @@
 import os.path as osp
 import logging
 import numpy as np
-from romav2.geometry import compute_pose_error, pose_auc, estimate_pose_cv2_ransac
+from ..geometry import compute_pose_error, pose_auc, estimate_pose_cv2_ransac
 from PIL import Image
 from tqdm import tqdm
 

@@ -1,9 +1,9 @@
 from typing import Literal
 import torch
 import torch.nn.functional as F
-from romav2.device import device
+from .device import device
 from einops import einsum
-from romav2.types import ConfidenceMode
+from .types import ConfidenceMode
 import numpy as np
 
 

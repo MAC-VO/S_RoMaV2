@@ -1,6 +1,6 @@
 import numpy as np
 import logging
-from romav2.geometry import (
+from ..geometry import (
     compute_pose_error,
     pose_auc,
     estimate_pose_cv2_ransac,

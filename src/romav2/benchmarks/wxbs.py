@@ -6,12 +6,12 @@ from tqdm import tqdm
 from wxbs_benchmark.dataset import WxBSDataset
 from wxbs_benchmark.evaluation import evaluate_corrs
 
-from romav2.romav2 import RoMaV2
-from romav2.io import tensor_to_pil
-from romav2.device import device
+from ..romav2 import RoMaV2
+from ..io import tensor_to_pil
+from ..device import device
 from pathlib import Path
-from romav2.geometry import to_normalized, to_pixel, bhwc_grid_sample
-from romav2.vis import vis
+from ..geometry import to_normalized, to_pixel, bhwc_grid_sample
+from ..vis import vis
 
 
 class WxBSBenchmark:

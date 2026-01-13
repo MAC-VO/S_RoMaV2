@@ -12,19 +12,19 @@ import torch.nn.functional as F
 from PIL import Image
 
 import logging
-from romav2.device import device
-from romav2.features import Descriptor, FineFeatures
-from romav2.geometry import (
+from .device import device
+from .features import Descriptor, FineFeatures
+from .geometry import (
     bhwc_grid_sample,
     bhwc_interpolate,
     get_normalized_grid,
     prec_mat_from_prec_params,
     to_pixel,
 )
-from romav2.io import check_not_i16
-from romav2.matcher import Matcher
-from romav2.refiner import Refiners
-from romav2.types import Setting, ImageLike
+from .io import check_not_i16
+from .matcher import Matcher
+from .refiner import Refiners
+from .types import Setting, ImageLike
 
 logger = logging.getLogger(__name__)
 
@@ -167,8 +167,10 @@ class RoMaV2(nn.Module):
         img_A_hr: torch.Tensor | None = None,
         img_B_hr: torch.Tensor | None = None,
     ) -> dict[str, tuple[torch.Tensor, torch.Tensor] | torch.Tensor]:
-        if torch.get_float32_matmul_precision() != "highest":
-            raise RuntimeError("Float32 matmul precision must be set to highest")
+        # NOTE: FIXME: issue tracker at https://github.com/Parskatt/RoMaV2/issues/35
+        #
+        # if torch.get_float32_matmul_precision() != "highest":
+        #     raise RuntimeError("Float32 matmul precision must be set to highest")
         assert not self.training, "Currently only inference mode released"
         # assumes images between [0, 1]
         # init preds

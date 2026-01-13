@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 import numpy as np
-from romav2.device import device
+from .device import device
 
 
 def vis(img1, img2, warp_AB, warp_BA, certainty_AB, certainty_BA):

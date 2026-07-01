@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Literal
 from .geometry import get_normalized_grid
 from einops import einsum
-from .device import device
+from .device import device, keep_autocast_in_trace
 from .vit import ViTModel, vit_from_name
 from .types import HeadType, MatcherStyle
 from .dpt import DPTHead
@@ -137,7 +137,7 @@ class Matcher(nn.Module):
         ).reshape(B, H_B, W_B, -1)
         pos_emb_grid = torch.cat((x_emb.sin(), x_emb.cos()), dim=-1)
 
-        with torch.autocast(device.type, torch.bfloat16, enabled=self.cfg.enable_amp and not torch.jit.is_tracing()):
+        with torch.autocast(device.type, torch.bfloat16, enabled=self.cfg.enable_amp and (not torch.jit.is_tracing() or keep_autocast_in_trace())):
             assert self.mv_vit is not None
             f_mv_AB = self.mv_vit(torch.stack((f_A, f_B), dim=1))[
                 "x_norm_patchtokens"

@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from .local_correlation import local_correlation
 from .geometry import get_normalized_grid
-from .device import device
+from .device import device, keep_autocast_in_trace
 from .geometry import bhwc_grid_sample
 from .types import RefinersType, NormType
 
@@ -56,7 +56,7 @@ class Block(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         with torch.autocast(
-            device_type=device.type, enabled=self.enable_amp and not torch.jit.is_tracing(), dtype=torch.bfloat16
+            device_type=device.type, enabled=self.enable_amp and (not torch.jit.is_tracing() or keep_autocast_in_trace()), dtype=torch.bfloat16
         ):
             x = self.conv_depthwise(x)
             x = self.norm(x)

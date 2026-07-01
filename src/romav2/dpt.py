@@ -158,6 +158,11 @@ class DPTHead(nn.Module):
         Returns:
             Tensor or Tuple[Tensor, Tensor]: Feature maps or (predictions, confidence).
         """
+        # NOTE: the DPT head autocast is intentionally NOT kept during export (no
+        # `keep_autocast_in_trace()`): its Resize/interpolation ops have no bf16 kernel in
+        # a strongly-typed TensorRT build. Exporting the head in fp32 both fixes the build
+        # and matches eager's `out.float()` head precision; the head is small (not the
+        # refiner-correlation bottleneck), so the speed cost is negligible.
         with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=not torch.jit.is_tracing()):
             assert not isinstance(aggregated_tokens_list_or_tokens, torch.Tensor), (
                 "aggregated_tokens_list_or_tokens should be a list of tensors"

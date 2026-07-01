@@ -4,7 +4,7 @@ import torch
 from einops import rearrange
 from .normalizers import imagenet
 from .types import Normalizer, DescriptorName
-from .device import device
+from .device import device, keep_autocast_in_trace
 from torch import nn
 from functools import partial
 import torchvision.models as models
@@ -22,7 +22,7 @@ def wrap_with_normalize(
 ):
     def wrapped_forward(self, img: torch.Tensor) -> list[torch.Tensor]:
         with (
-            torch.autocast(device.type, torch.bfloat16, enabled=enable_amp and not torch.jit.is_tracing()),
+            torch.autocast(device.type, torch.bfloat16, enabled=enable_amp and (not torch.jit.is_tracing() or keep_autocast_in_trace())),
             torch.set_grad_enabled(not frozen),
         ):
             if self.training and frozen:
@@ -138,7 +138,7 @@ class Descriptor:
 class VGG(nn.Module):
     def forward(self, x):
         x = imagenet(x)
-        with torch.autocast(device_type="cuda", enabled=not torch.jit.is_tracing(), dtype=torch.bfloat16):
+        with torch.autocast(device_type="cuda", enabled=not torch.jit.is_tracing() or keep_autocast_in_trace(), dtype=torch.bfloat16):
             feats = {}
             scale = 1
             for layer in self.layers:

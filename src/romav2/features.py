@@ -22,13 +22,14 @@ def wrap_with_normalize(
 ):
     def wrapped_forward(self, img: torch.Tensor) -> list[torch.Tensor]:
         with (
-            torch.autocast(device.type, torch.bfloat16, enabled=enable_amp),
+            torch.autocast(device.type, torch.bfloat16, enabled=enable_amp and not torch.jit.is_tracing()),
             torch.set_grad_enabled(not frozen),
         ):
             if self.training and frozen:
                 self.eval()
             B, C, H, W = img.shape
-            assert C == 3, f"Image must have 3 channels, but got shape {img.shape=}"
+            if not torch.jit.is_tracing():
+                assert C == 3, f"Image must have 3 channels, but got shape {img.shape=}"
             img_n = normalizer(img)
             H = H // patch_size
             W = W // patch_size
@@ -137,7 +138,7 @@ class Descriptor:
 class VGG(nn.Module):
     def forward(self, x):
         x = imagenet(x)
-        with torch.autocast(device_type="cuda", enabled=True, dtype=torch.bfloat16):
+        with torch.autocast(device_type="cuda", enabled=not torch.jit.is_tracing(), dtype=torch.bfloat16):
             feats = {}
             scale = 1
             for layer in self.layers:

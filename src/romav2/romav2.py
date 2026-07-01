@@ -203,9 +203,10 @@ class RoMaV2(nn.Module):
             if img_A is None or img_B is None:
                 continue
             B, C, H, W = img_A.shape
-            scale_factor = torch.tensor(
-                (W / self.anchor_width, H / self.anchor_height), device=device
-            )
+            # Plain float pair (not a torch.tensor): the values are static per export,
+            # and keeping them as Python scalars avoids baking a `torch.tensor(...)`
+            # constant into the trace. Consumed as a per-channel scale in the refiner.
+            scale_factor = (W / self.anchor_width, H / self.anchor_height)
             refiner_features_A = self.refiner_features(img_A)
             refiner_features_B = self.refiner_features(img_B)
             for patch_size_str, refiner in self.refiners.items():
@@ -522,6 +523,38 @@ class RoMaV2(nn.Module):
                 return torch.cat((inds_A, inds_B), dim=-1)
             else:
                 return torch.cat((x_A[inds_A], x_B[inds_B]), dim=-1)
+
+
+class RoMaV2CoreModule(nn.Module):
+    """ONNX/TensorRT-exportable core of :class:`RoMaV2`.
+
+    Maps already-resized low-resolution image tensors to a *flat* tuple of
+    warp/confidence tensors for both directions. `RoMaV2.forward` returns a dict
+    containing ``None`` entries and nested sub-module outputs, neither of which can
+    cross the ONNX export boundary; this thin wrapper strips everything except the
+    four plain tensors a downstream matcher needs, in a fixed positional order.
+
+    Only the low-resolution single-stage path is exported (``img_*_hr`` left as the
+    ``None`` default), so this wrapper is valid solely for settings whose
+    ``H_hr`` / ``W_hr`` are ``None`` (e.g. ``turbo`` / ``fast`` / ``base``). The
+    wrapped model must have ``bidirectional = True`` so ``warp_BA`` / ``confidence_BA``
+    are non-None.
+    """
+
+    def __init__(self, model: RoMaV2):
+        super().__init__()
+        self.model = model
+        assert self.model.bidirectional == True
+
+    def forward(
+        self, img_A_lr: torch.Tensor, img_B_lr: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        preds = self.model(img_A_lr, img_B_lr)
+        warp_AB, confidence_AB = preds["warp_AB"], preds["confidence_AB"]
+        warp_BA, confidence_BA = preds["warp_BA"], preds["confidence_BA"]
+        assert warp_BA is not None and confidence_BA is not None, "RoMaV2CoreModule requires model.bidirectional=True to emit the BA direction"
+        
+        return warp_AB, confidence_AB, warp_BA, confidence_BA
 
 
 def kde(x: torch.Tensor, std: float = 0.1, half: bool = True) -> torch.Tensor:

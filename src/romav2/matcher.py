@@ -127,16 +127,17 @@ class Matcher(nn.Module):
         f_B = torch.cat(f_list_B, dim=-1)
         B, H_A, W_A, D_feat = f_A.shape
         B, H_B, W_B, D_feat = f_B.shape
-        assert D_feat == self.cfg.feat_dim * self.cfg.num_feature_layers, (
-            "Feature dimension mismatch"
-        )
+        if not torch.jit.is_tracing():
+            assert D_feat == self.cfg.feat_dim * self.cfg.num_feature_layers, (
+                "Feature dimension mismatch"
+            )
         x = get_normalized_grid(B, H_B, W_B)
         x_emb = nn.functional.linear(
             x.reshape(B, H_B * W_B, 2), self.scale * self.omega
         ).reshape(B, H_B, W_B, -1)
         pos_emb_grid = torch.cat((x_emb.sin(), x_emb.cos()), dim=-1)
 
-        with torch.autocast(device.type, torch.bfloat16, enabled=self.cfg.enable_amp):
+        with torch.autocast(device.type, torch.bfloat16, enabled=self.cfg.enable_amp and not torch.jit.is_tracing()):
             assert self.mv_vit is not None
             f_mv_AB = self.mv_vit(torch.stack((f_A, f_B), dim=1))[
                 "x_norm_patchtokens"
@@ -147,7 +148,8 @@ class Matcher(nn.Module):
         f_mv_A = f_mv_A.float()
         f_mv_B = f_mv_B.float()
 
-        assert H_A == H_B and W_A == W_B, "H_A and W_A must be equal to H_B and W_B"
+        if not torch.jit.is_tracing():
+            assert H_A == H_B and W_A == W_B, "H_A and W_A must be equal to H_B and W_B"
         attn_AB_logits, attn_AB, match_emb_AB = _compute_match_embeddings(
             f_A=f_mv_A,
             f_B=f_mv_B,

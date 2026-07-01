@@ -158,7 +158,7 @@ class DPTHead(nn.Module):
         Returns:
             Tensor or Tuple[Tensor, Tensor]: Feature maps or (predictions, confidence).
         """
-        with torch.autocast(device_type=device.type, dtype=torch.bfloat16):
+        with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=not torch.jit.is_tracing()):
             assert not isinstance(aggregated_tokens_list_or_tokens, torch.Tensor), (
                 "aggregated_tokens_list_or_tokens should be a list of tensors"
             )
@@ -206,9 +206,11 @@ class DPTHead(nn.Module):
             # Interpolate fused output to match target image resolution.
             out = custom_interpolate(
                 out,
+                # Integer (floor) division keeps the target size symbolic under tracing;
+                # `a // b == int(a / b)` for the positive sizes here, so it is exact.
                 (
-                    int(patch_h * self.patch_size / self.down_ratio),
-                    int(patch_w * self.patch_size / self.down_ratio),
+                    patch_h * self.patch_size // self.down_ratio,
+                    patch_w * self.patch_size // self.down_ratio,
                 ),
                 mode="bilinear",
                 align_corners=self.align_corners,
@@ -494,13 +496,23 @@ def custom_interpolate(
     Custom interpolate to avoid INT_MAX issues in nn.functional.interpolate.
     """
     if size is None:
-        size = (int(x.shape[-2] * scale_factor), int(x.shape[-1] * scale_factor))
+        # All call sites use an integer upsample factor; integer math keeps the size
+        # symbolic under tracing (avoids an int(<traced float>) TracerWarning). Falls
+        # back to the float path for a hypothetical non-integer scale_factor.
+        if float(scale_factor).is_integer():
+            factor = int(scale_factor)
+            size = (x.shape[-2] * factor, x.shape[-1] * factor)
+        else:
+            size = (int(x.shape[-2] * scale_factor), int(x.shape[-1] * scale_factor))
 
     INT_MAX = 1610612736
 
     input_elements = size[0] * size[1] * x.shape[0] * x.shape[1]
 
-    if input_elements > INT_MAX:
+    # The INT_MAX chunking is a safeguard for oversized interpolations that never
+    # triggers at these resolutions. Skip the traced-shape comparison during export
+    # (it would emit a boolean TracerWarning); `and` short-circuits before it is read.
+    if not torch.jit.is_tracing() and input_elements > INT_MAX:
         chunks = torch.chunk(x, chunks=(input_elements // INT_MAX) + 1, dim=0)
         interpolated_chunks = [
             nn.functional.interpolate(

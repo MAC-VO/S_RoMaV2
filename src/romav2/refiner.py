@@ -56,7 +56,7 @@ class Block(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         with torch.autocast(
-            device_type=device.type, enabled=self.enable_amp, dtype=torch.bfloat16
+            device_type=device.type, enabled=self.enable_amp and not torch.jit.is_tracing(), dtype=torch.bfloat16
         ):
             x = self.conv_depthwise(x)
             x = self.norm(x)
@@ -138,18 +138,20 @@ class ConvRefiner(nn.Module):
         f_B: torch.Tensor,
         prev_warp: torch.Tensor,
         prev_confidence: torch.Tensor | None,
-        scale_factor: torch.Tensor,
+        scale_factor: tuple[float, float],
     ):
         B, H_A, W_A, _ = f_A.shape
         B, H_B, W_B, D = f_B.shape
-        assert H_A == H_B and W_A == W_B, "Images must have the same height and width"
+        if not torch.jit.is_tracing():
+            assert H_A == H_B and W_A == W_B, "Images must have the same height and width"
         prev_warp = prev_warp.detach()
         if prev_confidence is not None:
             prev_confidence = prev_confidence.detach()
         B, H_A, W_A, D = f_A.shape
-        assert D == self.cfg.feat_dim, (
-            f"Config feature dimension {self.cfg.feat_dim=} must be the same as the input feature dimension {D=}"
-        )
+        if not torch.jit.is_tracing():
+            assert D == self.cfg.feat_dim, (
+                f"Config feature dimension {self.cfg.feat_dim=} must be the same as the input feature dimension {D=}"
+            )
 
         f_A = self.proj(f_A.reshape(B, H_A * W_A, self.cfg.feat_dim).float()).reshape(
             B, H_A, W_A, self.cfg.proj_dim
@@ -164,9 +166,16 @@ class ConvRefiner(nn.Module):
         im_A_coords = get_normalized_grid(B, H_A, W_A)
         in_displacement = prev_warp - im_A_coords
         in_displacement_bdhw = in_displacement.permute(0, 3, 1, 2)
-        emb_in_displacement = self.disp_emb(
-            scale_factor[None, :, None, None] * in_displacement_bdhw
+        # Per-channel scale by (scale_factor_x, scale_factor_y) using Python scalars,
+        # equivalent to the former `scale_factor[None, :, None, None] *` broadcast.
+        scaled_displacement = torch.stack(
+            (
+                in_displacement_bdhw[:, 0] * scale_factor[0],
+                in_displacement_bdhw[:, 1] * scale_factor[1],
+            ),
+            dim=1,
         )
+        emb_in_displacement = self.disp_emb(scaled_displacement)
         # Corr in other means take a kxk grid around the predicted coordinate in other image
         f_A_bdhw = f_A.permute(0, 3, 1, 2)
         f_B_bdhw = f_BA.permute(0, 3, 1, 2)
@@ -177,7 +186,6 @@ class ConvRefiner(nn.Module):
                 f_B_bdhw,
                 local_radius=self.cfg.local_corr_radius,
                 warp=prev_warp,
-                scale_factor=scale_factor,
             )
             d = torch.cat((d, local_corr), dim=1)
         # d = torch.cat((f_A_bdhw, f_B_bdhw, emb_in_displacement, local_corr), dim=1)
@@ -193,12 +201,20 @@ class ConvRefiner(nn.Module):
         delta_confidence = delta_confidence.permute(0, 2, 3, 1)
         displacement = displacement.view(B, H_A, W_A, self.cfg.warp_dim)
         delta_confidence = delta_confidence.view(B, H_A, W_A, self.cfg.confidence_dim)
-        warp = prev_warp + displacement / (
-            self.cfg.refine_init
-            * torch.tensor((W_A, H_A), device=device)[None, None, None]
+        # Scale the x/y displacement by the (static) spatial dims (W_A, H_A) using Python
+        # scalars rather than a `torch.tensor((W_A, H_A))` constant, which the tracer would
+        # otherwise bake into the graph and warn about. warp_dim is 2, so this is exact.
+        warp = prev_warp + torch.stack(
+            (
+                displacement[..., 0] / (self.cfg.refine_init * W_A),
+                displacement[..., 1] / (self.cfg.refine_init * H_A),
+            ),
+            dim=-1,
         )
 
-        if delta_confidence.shape[-1] == 4:
+        # Compare the config channel count (a Python int) rather than the traced
+        # `delta_confidence.shape[-1]`, which the tracer would convert to a baked bool.
+        if self.cfg.confidence_dim == 4:
             chol_eps = 1e-6
             l00 = F.softplus(delta_confidence[..., 1]) + chol_eps  # this is in pixels
             l10 = delta_confidence[..., 2]
@@ -211,12 +227,14 @@ class ConvRefiner(nn.Module):
             )
 
         if prev_confidence is not None:
-            if prev_confidence.shape[-1] == delta_confidence.shape[-1]:
-                confidence = prev_confidence + delta_confidence
-            else:
-                padded_prev_confidence = torch.zeros_like(delta_confidence)
-                padded_prev_confidence[..., :1] = prev_confidence
-                confidence = padded_prev_confidence + delta_confidence
+            # Branchless equivalent of "same channel count -> add; fewer -> pad the first
+            # channel(s) then add": pad prev_confidence up to delta's (config-fixed)
+            # channel count with trailing zeros — a no-op when they already match. This
+            # avoids a Python `if` on a traced `.shape[-1]`, which the tracer bakes and
+            # warns about. delta_confidence always has `self.cfg.confidence_dim` channels.
+            pad_width = self.cfg.confidence_dim - prev_confidence.shape[-1]
+            pad = prev_confidence.new_zeros((*prev_confidence.shape[:-1], pad_width))
+            confidence = torch.cat([prev_confidence, pad], dim=-1) + delta_confidence
         else:
             confidence = delta_confidence
 

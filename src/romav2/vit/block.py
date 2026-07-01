@@ -138,16 +138,20 @@ class SelfAttentionBlock(nn.Module):
         on the elementwise operations. Torch-compile memory-planning allows hiding the overhead
         related to concat ops.
         """
-        b_list = [x.shape[0] for x in x_list]
-        sample_subset_sizes = [
-            max(int(b * (1 - self.sample_drop_ratio)), 1) for b in b_list
-        ]
-        residual_scale_factors = [
-            b / sample_subset_size
-            for b, sample_subset_size in zip(b_list, sample_subset_sizes)
-        ]
-
         if self.training and self.sample_drop_ratio > 0.0:
+            # Only the drop path needs the per-input subset sizes. Computing them here
+            # (instead of unconditionally) keeps `int(b * ...)` out of the eval/export
+            # trace, where it would emit a "Converting a tensor to a Python integer"
+            # TracerWarning.
+            b_list = [x.shape[0] for x in x_list]
+            sample_subset_sizes = [
+                max(int(b * (1 - self.sample_drop_ratio)), 1) for b in b_list
+            ]
+            residual_scale_factors = [
+                b / sample_subset_size
+                for b, sample_subset_size in zip(b_list, sample_subset_sizes)
+            ]
+
             indices_1_list = [
                 (torch.randperm(b, device=x.device))[:sample_subset_size]
                 for x, b, sample_subset_size in zip(x_list, b_list, sample_subset_sizes)

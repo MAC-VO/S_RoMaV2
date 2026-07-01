@@ -59,7 +59,11 @@ class RopePositionEmbedding(nn.Module):
     def forward(self, *, H: int, W: int) -> tuple[Tensor, Tensor]:
         device = self.periods.device
         dtype = self.dtype
-        dd = {"device": device, "dtype": dtype}
+        # Positions (and therefore the exported ONNX `Range` node) are computed in
+        # float32: TensorRT's ONNX importer only accepts int32/int64/float `Range`
+        # inputs and rejects bf16. sin/cos are cast back to `dtype` before returning,
+        # so downstream attention (which adopts the rope dtype) is numerically unchanged.
+        dd = {"device": device, "dtype": torch.float32}
 
         # Prepare coords in range [-1, +1]
         if self.normalize_coords == "max":
@@ -102,14 +106,20 @@ class RopePositionEmbedding(nn.Module):
             rescale_hw = torch.empty(1, **dd).uniform_(rescale_min, rescale_max).exp()
             coords *= rescale_hw
 
-        # Prepare angles and sin/cos
+        # Prepare angles and sin/cos (fp32 for exportability, see note above).
         angles = (
-            2 * math.pi * coords[:, :, None] / self.periods[None, None, :]
+            2 * math.pi * coords[:, :, None] / self.periods.float()[None, None, :]
         )  # [HW, 2, D//4]
         angles = angles.flatten(1, 2)  # [HW, D//2]
         angles = angles.tile(2)  # [HW, D]
         cos = torch.cos(angles)  # [HW, D]
         sin = torch.sin(angles)  # [HW, D]
+
+        # Keep sin/cos in fp32 while tracing so attention (which adopts the rope dtype)
+        # stays fp32 in the exported graph; TensorRT re-introduces bf16 via its builder.
+        if dtype is not None and not torch.jit.is_tracing():
+            sin = sin.to(dtype)
+            cos = cos.to(dtype)
 
         return (sin, cos)  # 2 * [HW, D]
 
